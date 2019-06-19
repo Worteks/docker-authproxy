@@ -1,0 +1,571 @@
+apiVersion: v1
+kind: Template
+labels:
+  app: authproxy
+  template: authproxy-ephemeral
+message: |-
+  The following service(s) have been created in your project:
+      https://auth.${WSWEET_ROOT_DOMAIN} -- LLNG Portal
+      https://manager.${WSWEET_ROOT_DOMAIN} -- LLNG Manager
+      https://dummy-proxy.${WSWEET_ROOT_DOMAIN} -- AuthProxy
+
+  Global admin username: demoone
+  Built-in normal users : demotoo & demotri
+  and password: see openldap-${FRONTNAME} secret
+
+  For more information about using this template, see https://github.com/Worteks/wsweet-ci
+metadata:
+  annotations:
+    description: AuthProxy - ephemeral
+      see https://github.com/Worteks/docker-authproxy
+    iconClass: icon-openshift
+    openshift.io/display-name: AuthProxy
+    openshift.io/documentation-url: https://github.com/Worteks/wsweet-ci
+    openshift.io/provider-display-name: Worteks
+    openshift.io/support-url: https://www.worteks.com
+    tags: authproxy
+  name: authproxy-ephemeral
+objects:
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      name: openldap-${FRONTNAME}
+    name: openldap-${FRONTNAME}
+  spec:
+    replicas: 1
+    selector:
+      name: openldap-${FRONTNAME}
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          name: openldap-${FRONTNAME}
+      spec:
+        dnsPolicy: ClusterFirst
+        containers:
+        - capabilities: {}
+          env:
+          - name: OPENLDAP_AUTHPROXY_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: authproxy-password
+          - name: OPENLDAP_BIND_LDAP_PORT
+            value: "1389"
+          - name: OPENLDAP_BIND_LDAPS_PORT
+            value: "1636"
+          - name: OPENLDAP_BLUEMIND_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: bluemind-password
+          - name: OPENLDAP_DEBUG_LEVEL
+            value: "${OPENLDAP_DEBUG_LEVEL}"
+          - name: OPENLDAP_DEMO_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: demo-password
+          - name: OPENLDAP_FUSION_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: fusion-password
+          - name: OPENLDAP_HOST_ENDPOINT
+            value: openldap-${FRONTNAME}
+          - name: OPENLDAP_LEMONLDAP_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: lemonldap-password
+          - name: OPENLDAP_LEMONLDAP_HTTPS
+            value: "yes"
+          - name: OPENLDAP_LEMONLDAP_SESSIONS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: lemonldap-sessions-password
+          - name: OPENLDAP_LEMON_HTTP_PORT
+            value: "8080"
+          - name: OPENLDAP_MEDIAWIKI_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: mediawiki-password
+          - name: OPENLDAP_MONITOR_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: monitor-password
+          - name: OPENLDAP_NEXTCLOUD_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: nextcloud-password
+          - name: OPENLDAP_ORG_SHORT
+            value: "${WSWEET_ORG_NAME}"
+          - name: OPENLDAP_ROKET_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: rocket-password
+          - name: OPENLDAP_ROOT_DN_PREFIX
+            value: cn=admin
+          - name: OPENLDAP_ROOT_DN_SUFFIX
+            value: "${WSWEET_BASE_SUFFIX}"
+          - name: OPENLDAP_ROOT_DOMAIN
+            value: "${WSWEET_ROOT_DOMAIN}"
+          - name: OPENLDAP_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: root-password
+          - name: OPENLDAP_SMTP_SERVER
+            value: "${WSWEET_SMTP_RELAY}"
+          - name: OPENLDAP_SSO_CLIENT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: ssoapp-password
+          - name: OPENLDAP_SSP_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: ssp-password
+          - name: OPENLDAP_SYNCREPL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: syncrepl-password
+          - name: OPENLDAP_AUTHPROXY_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: authproxy-password
+          - name: OPENLDAP_WSWEET_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: wsweet-password
+          image: ' '
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 30
+            timeoutSeconds: 1
+            tcpSocket:
+              port: 1389
+          name: openldap
+          ports:
+          - containerPort: 1389
+            protocol: TCP
+          - containerPort: 1636
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - "-i"
+              - "-c"
+              - /usr/local/bin/is-ready.sh
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: "${OPENLDAP_CPU_LIMIT}"
+              memory: "${OPENLDAP_MEMORY_LIMIT}"
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - name: conf
+            mountPath: /etc/openldap
+          - name: data
+            mountPath: /var/lib/ldap
+          - name: run
+            mountPath: /run
+        restartPolicy: Always
+        volumes:
+        - emptyDir: {}
+          name: conf
+        - emptyDir: {}
+          name: data
+        - emptyDir: {}
+          name: run
+    triggers:
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+        - openldap
+        from:
+          kind: ImageStreamTag
+          name: ${OPENLDAP_IMAGESTREAM_TAG}
+        lastTriggeredImage: ''
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      template.openshift.io/expose-uri: ldaps://{.spec.clusterIP}:{.spec.ports[?(.name=="ldaps")].port}
+    name: openldap-${FRONTNAME}
+  spec:
+    ports:
+    - name: ldap
+      protocol: TCP
+      port: 1389
+      targetPort: 1389
+      nodePort: 0
+    - name: ldaps
+      protocol: TCP
+      port: 1636
+      targetPort: 1636
+      nodePort: 0
+    selector:
+      name: openldap-${FRONTNAME}
+    type: ClusterIP
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      name: lemon-${FRONTNAME}
+    name: lemon-${FRONTNAME}
+  spec:
+    replicas: 1
+    selector:
+      name: lemon-${FRONTNAME}
+    strategy:
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          name: lemon-${FRONTNAME}
+      spec:
+        dnsPolicy: ClusterFirst
+        hostAliases:
+        - ip: "127.0.0.1"
+          hostnames:
+          - "auth.${WSWEET_ROOT_DOMAIN}"
+          - "manager.${WSWEET_ROOT_DOMAIN}"
+          - "reload.${WSWEET_ROOT_DOMAIN}"
+        containers:
+        - capabilities: {}
+          env:
+          - name: OPENLDAP_BASE
+            value: "${WSWEET_BASE_SUFFIX}"
+          - name: OPENLDAP_BIND_DN_PREFIX
+            value: cn=lemonldap,ou=services
+          - name: OPENLDAP_BIND_PW
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: lemonldap-password
+          - name: OPENLDAP_CONF_DN_PREFIX
+            value: ou=lemonldap,ou=config
+          - name: OPENLDAP_DOMAIN
+            value: "${WSWEET_ROOT_DOMAIN}"
+          - name: OPENLDAP_HOST
+            value: openldap-${FRONTNAME}
+          - name: OPENLDAP_HTTP_PORT
+            value: "8080"
+          - name: OPENLDAP_PORT
+            value: "1389"
+          - name: OPENLDAP_PROTO
+            value: ldap
+          image: ' '
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 15
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 8
+          name: lemon
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "${LEMON_CPU_LIMIT}"
+              memory: "${LEMON_MEMORY_LIMIT}"
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - name: apachesites
+            mountPath: /etc/apache2/sites-enabled
+          - name: etcconf
+            mountPath: /etc/lemonldap-ng
+        restartPolicy: Always
+        volumes:
+        - emptyDir: {}
+          name: etcconf
+        - emptyDir: {}
+          name: apachesites
+    triggers:
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+        - lemon
+        from:
+          kind: ImageStreamTag
+          name: ${LEMON_IMAGESTREAM_TAG}
+        lastTriggeredImage: ''
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: lemon-${FRONTNAME}
+    annotations:
+      description: Exposes and load balances the SSO pods
+  spec:
+    ports:
+    - name: sso
+      port: 8080
+      targetPort: 8080
+    selector:
+      name: lemon-${FRONTNAME}
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: lemon-${FRONTNAME}-reload
+  spec:
+    host: reload.${WSWEET_ROOT_DOMAIN}
+    to:
+      kind: Service
+      name: lemon-${FRONTNAME}
+    tls:
+      insecureEdgeTerminationPolicy: Redirect
+      termination: edge
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: lemon-${FRONTNAME}-manager
+  spec:
+    host: manager.${WSWEET_ROOT_DOMAIN}
+    to:
+      kind: Service
+      name: lemon-${FRONTNAME}
+    tls:
+      insecureEdgeTerminationPolicy: Redirect
+      termination: edge
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: lemon-${FRONTNAME}-auth
+  spec:
+    host: auth.${WSWEET_ROOT_DOMAIN}
+    to:
+      kind: Service
+      name: lemon-${FRONTNAME}
+    tls:
+      insecureEdgeTerminationPolicy: Redirect
+      termination: edge
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      name: authproxy-${FRONTNAME}
+    name: authproxy-${FRONTNAME}
+  spec:
+    replicas: 1
+    selector:
+      name: authproxy-${FRONTNAME}
+    strategy:
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          name: authproxy-${FRONTNAME}
+      spec:
+        dnsPolicy: ClusterFirst
+        containers:
+        - capabilities: {}
+          env:
+          - name: OPENLDAP_BASE
+            value: "${WSWEET_BASE_SUFFIX}"
+          - name: OPENLDAP_BIND_DN_PREFIX
+            value: cn=authproxy,ou=services
+          - name: OPENLDAP_BIND_PW
+            valueFrom:
+              secretKeyRef:
+                name: openldap-${FRONTNAME}
+                key: authproxy-password
+          - name: OPENLDAP_DOMAIN
+            value: "${WSWEET_ROOT_DOMAIN}"
+          - name: OPENLDAP_HOST
+            value: openldap-${FRONTNAME}
+          - name: OPENLDAP_PORT
+            value: "1389"
+          - name: OPENLDAP_PROTO
+            value: ldap
+          - name: PROXY_BACKEND_HOST
+            value: gogole.fr
+          - name: PROXY_BACKEND_PORT
+            value: "443"
+          - name: PROXY_BACKEND_PROTO
+            value: https
+          - name: PROXY_HTTP_PORT
+            value: "8080"
+          - name: PROXY_PROTO
+            value: http
+          - name: PROXY_SERVER_NAME
+            value: dummy-proxy.${WSWEET_ROOT_DOMAIN}
+          - name: PUBLIC_PROTO
+            value: https
+          image: ' '
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 30
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 8
+          name: authproxy
+          ports:
+          - containerPort: 8080
+            protocol: TCP
+          readinessProbe:
+            initialDelaySeconds: 5
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 5
+          resources:
+            limits:
+              cpu: "${AUTHPROXY_CPU_LIMIT}"
+              memory: "${AUTHPROXY_MEMORY_LIMIT}"
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - name: apachesites
+            mountPath: /etc/apache2/sites-enabled
+        restartPolicy: Always
+        volumes:
+        - emptyDir: {}
+          name: apachesites
+    triggers:
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+        - authproxy
+        from:
+          kind: ImageStreamTag
+          name: authproxy-${AUTHPROXY_IMAGE_FRONTNAME}:${AUTHPROXY_IMAGE_TAG}
+        lastTriggeredImage: ''
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: authproxy-${FRONTNAME}
+    annotations:
+      description: Exposes and load balances the AuthProxy pods
+  spec:
+    ports:
+    - name: authproxy
+      port: 8080
+      targetPort: 8080
+    selector:
+      name: authproxy-${FRONTNAME}
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: authproxy-${FRONTNAME}
+  spec:
+    host: dummy-proxy.${WSWEET_ROOT_DOMAIN}
+    to:
+      kind: Service
+      name: authproxy-${FRONTNAME}
+    tls:
+      insecureEdgeTerminationPolicy: Redirect
+      termination: edge
+parameters:
+- name: AUTHPROXY_CPU_LIMIT
+  description: Maximum amount of CPU a AuthProxy container can use
+  displayName: AuthProxy CPU Limit
+  required: true
+  value: 300m
+- name: AUTHPROXY_IMAGE_FRONTNAME
+  description: The name assigned to ImageStream object defined in corresponding template
+  displayName: Name
+  required: true
+  value: wsweet
+- name: AUTHPROXY_IMAGE_TAG
+  description: The ImageStreamTag we should pull images from
+  displayName: Tag
+  required: true
+  value: master
+- name: AUTHPROXY_MEMORY_LIMIT
+  description: Maximum amount of memory a AuthProxy container can use
+  displayName: AuthProxy Memory Limit
+  required: true
+  value: 512Mi
+- name: FRONTNAME
+  description: The name identifier assigned to objects defined in this template
+  displayName: Name
+  required: true
+  value: demo
+- name: LEMON_CPU_LIMIT
+  description: Maximum amount of CPU a Lemon container can use
+  displayName: Lemon CPU Limit
+  required: true
+  value: 300m
+- name: LEMON_IMAGESTREAM_TAG
+  description: The ImageStreamTag we should pull images from
+  displayName: Tag
+  required: true
+  value: lemon-wsweet:master
+- name: LEMON_MEMORY_LIMIT
+  description: Maximum amount of memory a Lemon container can use
+  displayName: Lemon Memory Limit
+  required: true
+  value: 512Mi
+- name: OPENLDAP_CPU_LIMIT
+  description: Maximum amount of CPU an OpenLDAP container can use
+  displayName: OpenLDAP CPU Limit
+  required: true
+  value: 300m
+- name: OPENLDAP_DEBUG_LEVEL
+  description: OpenLDAP log level
+  displayName: LDAP Log Level
+  required: true
+  value: '256'
+- name: OPENLDAP_IMAGESTREAM_TAG
+  description: OpenLDAP Image Tag
+  displayName: OpenLDAP ImageStream Tag
+  required: true
+  value: openldap-wsweet:master
+- name: OPENLDAP_MEMORY_LIMIT
+  description: Maximum amount of memory an OpenLDAP container can use
+  displayName: OpenLDAP Memory Limit
+  required: true
+  value: 512Mi
+- name: WSWEET_BASE_SUFFIX
+  description: OpenLDAP base suffix
+  displayName: LDAP Base Suffix
+  required: true
+  value: dc=demo,dc=local
+- name: WSWEET_ORG_NAME
+  description: Organization Display Name
+  displayName: Organization Display Name
+  required: true
+  value: Demo
+- name: WSWEET_ROOT_DOMAIN
+  description: Wsweet Root Domain
+  displayName: Wsweet Root Domain
+  required: true
+  value: demo.local
+- name: WSWEET_SMTP_RELAY
+  description: Wsweet SMTP Relay
+  displayName: Wsweet SMTP Relay
+  required: true
+  value: smtp.demo.local

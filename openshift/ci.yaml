@@ -1,0 +1,390 @@
+apiVersion: v1
+kind: Template
+labels:
+  app: authproxy
+  template: authproxy-jenkins-pipeline
+message: |-
+  For more information about using this template, see https://github.com/Worteks/wsweet-ci
+metadata:
+  annotations:
+    description: AuthProxy - Jenkinsfile
+      see https://github.com/Worteks/docker-authproxy
+    iconClass: icon-openshift
+    openshift.io/display-name: AuthProxy CI
+    openshift.io/documentation-url: https://github.com/Worteks/wsweet-ci
+    openshift.io/provider-display-name: Worteks
+    openshift.io/support-url: https://www.worteks.com
+    tags: authproxy
+  name: authproxy-jenkins-pipeline
+objects:
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      description: Tests Wsweet AuthProxy images
+    name: authproxy-jenkins-pipeline
+  spec:
+    strategy:
+      jenkinsPipelineStrategy:
+        jenkinsfile: |-
+          def frontName    = 'ciapx'
+          def templateMark = 'authproxy-jenkins-ci'
+          def templateSel  = 'jenkins-ci-mark'
+          pipeline {
+              agent {
+                  node {
+                      label 'maven'
+                  }
+              }
+              options {
+                  timeout(time: 70, unit: 'MINUTES')
+              }
+              parameters {
+                  string(defaultValue: 'secr3t', description: 'OpenLDAP Demo Password', name: 'demoPassword')
+                  string(defaultValue: 'authproxy', description: 'OpenLDAP Docker Image Tag', name: 'ldapTag')
+                  string(defaultValue: 'master', description: 'LemonLDAP-NG Docker Image Tag', name: 'lemonTag')
+                  string(defaultValue: '${OPENSHIFT_ROUTED_DOMAIN}', description: 'CI Router Root Domain', name: 'rootDomain')
+                  string(defaultValue: 'master', description: 'AuthProxy Docker Image - Source Git Branch', name: 'authproxyBranch')
+                  string(defaultValue: 'master', description: 'AuthProxy Docker Image - Source Git Hash', name: 'authproxyHash')
+                  string(defaultValue: '${GIT_SOURCE_HOST}/Wsweet/docker-authproxy.git', description: 'AuthProxy Docker Image - Source Git Repository', name: 'authproxyRepo')
+              }
+              stages {
+                  stage('preamble') {
+                      steps {
+                          script {
+                              openshift.withCluster() {
+                                  openshift.withProject() {
+                                      echo "Using project: ${openshift.project()}"
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  stage('pre-cleanup') {
+                      steps {
+                          script {
+                              openshift.withCluster() {
+                                  openshift.withProject() {
+                                      echo "cleaning up previous assets for authproxy-${frontName}-${params.authproxyHash}"
+                                      openshift.selector("all", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                      openshift.selector("secrets", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  stage('create') {
+                      steps {
+                          script {
+                              openshift.withCluster() {
+                                  openshift.withProject() {
+                                      def namespace = "${openshift.project()}"
+                                      try {
+                                          timeout(10) {
+                                              def cloneProto = "http"
+                                              def created
+                                              def objectsFromTemplate
+                                              def privateRepo = false
+                                              def repoHost = params.authproxyRepo.split('/')[0]
+                                              def templatePath = "/tmp/workspace/${namespace}/${namespace}-authproxy-jenkins-pipeline/tmpauthproxy${params.authproxyBranch}/openshift"
+                                              sh "git config --global http.sslVerify false"
+                                              sh "rm -fr tmpauthproxy${params.authproxyBranch}; mkdir -p tmpauthproxy${params.authproxyBranch}"
+                                              dir ("tmpauthproxy${params.authproxyBranch}") {
+                                                  try {
+                                                      withCredentials([string(credentialsId: "git-${repoHost}", variable: 'GIT_TOKEN')]) {
+                                                          sh "echo 'https://${GIT_TOKEN}@${params.authproxyRepo}' >cloneFrom"
+                                                          cloneProto = "https"
+                                                          privateRepo = true
+                                                      }
+                                                      echo "cloning ${params.authproxyRepo} over https, using ${repoHost} token"
+                                                  } catch(e) {
+                                                      echo "caught ${e} - assuming no credentials required"
+                                                      sh "echo 'http://${params.authproxyRepo}' >cloneFrom 2>/dev/null"
+                                                      echo "cloning ${params.authproxyRepo} over http"
+                                                  }
+                                                  def cloneAddress = readFile('cloneFrom').trim()
+                                                  sh "rm -f cloneFrom"
+                                                  try {
+                                                      // use ${params.authproxyHash} instead of branch?
+                                                      // not critical, as only defines which ci.yaml template would be loaded
+                                                      // not certain the branch param accepts exact hashes anyway
+                                                      git([ branch: "${params.authproxyBranch}", changelog: false, poll: false, url: cloneAddress ])
+                                                  } catch(e) {
+                                                      echo "caught ${e} - failed cloning ${params.authproxyRepo}#${params.authproxyBranch}"
+                                                      sh "cd .. ; rm -fr tmpauthproxy${params.authproxyBranch}"
+                                                      throw e
+                                                  }
+                                              }
+                                              try {
+                                                  sh "test -d ${templatePath}"
+                                              } catch (e) {
+                                                  echo "Could not find ./openshift in ${params.authproxyRepo}#${params.authproxyBranch}"
+                                                  sh "rm -fr /tmp/workspace/${namespace}/${namespace}-authproxy-jenkins-pipeline/tmpauthproxy${params.authproxyBranch}"
+                                                  throw e
+                                              }
+                                              echo "Processing AuthProxy:${params.authproxyHash}, from ${repoHost}, tagging to ${params.authproxyBranch}"
+                                              echo "Testing against OpenLDAP:${params.ldapTag}, LLNG:${params.lemonTag}"
+                                              try {
+                                                  echo " == Creating ImageStream =="
+                                                  objectsFromTemplate = openshift.process("-f", "${templatePath}/imagestream.yaml",
+                                                      '-p', "FRONTNAME=wsweet")
+                                                  echo "The template will create ${objectsFromTemplate.size()} objects"
+                                                  created = openshift.apply(objectsFromTemplate)
+                                                  created.withEach {
+                                                      echo "Created ${it.name()} with labels ${it.object().metadata.labels}"
+                                                  }
+                                              } catch(e) {
+                                                  echo "Failed creating ImageStream"
+                                                  echo "${e}"
+                                              }
+                                              try {
+                                                  echo " == Creating BuildConfigs =="
+                                                  if (privateRepo) {
+                                                      withCredentials([string(credentialsId: "git-${repoHost}", variable: 'GIT_TOKEN')]) {
+                                                          objectsFromTemplate = openshift.process("-f", "${templatePath}/build-with-secret.yaml",
+                                                              '-p', "AUTHPROXY_REPOSITORY_REF=${params.authproxyHash}",
+                                                              '-p', "AUTHPROXY_REPOSITORY_URL=${cloneProto}://${params.authproxyRepo}",
+                                                              '-p', "FRONTNAME=wsweet",
+                                                              '-p', "GIT_DEPLOYMENT_TOKEN=${GIT_TOKEN}")
+                                                      }
+                                                  } else {
+                                                      objectsFromTemplate = openshift.process("-f", "${templatePath}/build.yaml",
+                                                          '-p', "AUTHPROXY_REPOSITORY_REF=${params.authproxyHash}",
+                                                          '-p', "AUTHPROXY_REPOSITORY_URL=${cloneProto}://${params.authproxyRepo}",
+                                                          '-p', "FRONTNAME=wsweet")
+                                                  }
+                                                  echo "The template will create ${objectsFromTemplate.size()} objects"
+                                                  for (o in objectsFromTemplate) {
+                                                      o.metadata.labels["${templateSel}"] = "${templateMark}-${params.authproxyHash}"
+                                                  }
+                                                  created = openshift.apply(objectsFromTemplate)
+                                                  created.withEach {
+                                                      echo "Created ${it.name()} from template with labels ${it.object().metadata.labels}"
+                                                  }
+                                              } catch(e) {
+                                                  echo "Failed creating BuildConfigs"
+                                                  echo "${e}"
+                                              }
+                                              try {
+                                                  echo " == Creating Secrets =="
+                                                  objectsFromTemplate = openshift.process("-f", "${templatePath}/secret.yaml",
+                                                      '-p', "FRONTNAME=${frontName}-${params.authproxyHash}",
+                                                      '-p', "OPENLDAP_DEMO_PASSWORD=${params.demoPassword}")
+                                                  echo "The template will create ${objectsFromTemplate.size()} objects"
+                                                  for (o in objectsFromTemplate) {
+                                                      o.metadata.labels["${templateSel}"] = "${templateMark}-${params.authproxyHash}"
+                                                  }
+                                                  created = openshift.create(objectsFromTemplate)
+                                                  created.withEach {
+                                                      echo "Created ${it.name()} from template with labels ${it.object().metadata.labels}"
+                                                  }
+                                              } catch(e) {
+                                                  echo "Failed creating Secret"
+                                                  echo "${e}"
+                                              }
+                                              echo " == Creating Demo =="
+                                              objectsFromTemplate = openshift.process("-f", "${templatePath}/run-ephemeral.yaml",
+                                                  '-p', "AUTHPROXY_IMAGE_TAG=${params.authproxyHash}",
+                                                  '-p', "FRONTNAME=${frontName}-${params.authproxyHash}",
+                                                  '-p', "LEMON_IMAGESTREAM_TAG=lemon-wsweet:${params.lemonTag}",
+                                                  '-p', "OPENLDAP_IMAGESTREAM_TAG=openldap-wsweet:${params.ldapTag}",
+                                                  '-p', "WSWEET_BASE_SUFFIX=dc=demo,dc=local",
+                                                  '-p', "WSWEET_ROOT_DOMAIN=${params.authproxyHash}.${params.rootDomain}")
+
+                                              echo "The template will create ${objectsFromTemplate.size()} objects"
+                                              for (o in objectsFromTemplate) {
+                                                  o.metadata.labels["${templateSel}"] = "${templateMark}-${params.authproxyHash}"
+                                              }
+                                              created = openshift.create(objectsFromTemplate)
+                                              created.withEach {
+                                                  echo "Created ${it.name()} from template with labels ${it.object().metadata.labels}"
+                                              }
+                                          }
+                                          sh "rm -fr /tmp/workspace/${namespace}/${namespace}-authproxy-jenkins-pipeline/tmpauthproxy${params.authproxyBranch}"
+                                      } catch(e) {
+                                          echo "in catch block while creating resources, cleaning up authproxy-${frontName}-${params.authproxyHash}"
+                                          sh "rm -fr /tmp/workspace/${namespace}/${namespace}-authproxy-jenkins-pipeline/tmpauthproxy${params.authproxyBranch}"
+                                          openshift.selector("all", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                          openshift.selector("secrets", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                          echo "Caught: ${e}"
+                                          currentBuild.result = 'FAILURE'
+                                          throw e
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  stage('build') {
+                      steps {
+                          script {
+                              openshift.withCluster() {
+                                  openshift.withProject() {
+                                      try {
+                                          timeout(20) {
+                                              echo "watching authproxy-wsweet-${params.authproxyHash} docker image build"
+                                              def builds = openshift.selector("bc", [ name: "authproxy-wsweet-${params.authproxyHash}" ]).related('builds')
+                                              builds.untilEach(1) {
+                                                  return (it.object().status.phase == "Complete")
+                                              }
+                                          }
+                                      } catch(e) {
+                                          echo "in catch block while building docker image, cleaning up authproxy-${frontName}-${params.authproxyHash} assets"
+                                          openshift.selector("all", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                          openshift.selector("secrets", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                          echo "Caught: ${e}"
+                                          currentBuild.result = 'FAILURE'
+                                          throw e
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  stage('deploy') {
+                      steps {
+                          script {
+                              openshift.withCluster() {
+                                  openshift.withProject() {
+                                      try {
+                                          timeout(15) {
+                                              def namespace = "${openshift.project()}"
+                                              try {
+                                                  sh """
+                                                  oc login https://kubernetes.default.svc.cluster.local --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt --token=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) > /dev/null 2>&1
+                                                  oc describe -n ${namespace} imagestreamtag authproxy-wsweet:${params.authproxyHash} || exit 1
+                                                  """
+                                              } catch(e) {
+                                                  echo "in catch block while looking for AuthProxy image"
+                                                  echo "Assuming build failed. Sleeping for 3 minutes and re-scheduling job"
+                                                  sleep 180
+                                                  def jobName   = "${namespace}/${namespace}-authproxy-jenkins-pipeline"
+                                                  def jobParams = [
+                                                          [$class: 'StringParameterValue', name: "authproxyBranch", value: params.authproxyBranch],
+                                                          [$class: 'StringParameterValue', name: "authproxyHash", value: params.authproxyHash],
+                                                          [$class: 'StringParameterValue', name: "authproxyRepo", value: params.authproxyRepo]
+                                                      ]
+                                                  try {
+                                                      build job: jobName, parameters: jobParams, propagate: false, wait: false
+                                                  } catch(e1) {
+                                                      echo "caught ${e1}"
+                                                  }
+                                                  throw e
+                                              }
+                                              retry(2) {
+                                                  echo "watching ldap-${frontName}-${params.authproxyHash} deployment rollout"
+                                                  def dc = openshift.selector("dc", [ name: "openldap-${frontName}-${params.authproxyHash}" ]).related('pods')
+                                                  dc.untilEach(1) {
+                                                      return (it.object().status.phase == "Running")
+                                                  }
+                                                  echo "watching lemon-${frontName}-${params.authproxyHash} deployment rollout"
+                                                  dc = openshift.selector("dc", [ name: "lemon-${frontName}-${params.authproxyHash}" ]).related('pods')
+                                                  dc.untilEach(1) {
+                                                      return (it.object().status.phase == "Running")
+                                                  }
+                                                  echo "watching authproxy-${frontName}-${params.authproxyHash} deployment rollout"
+                                                  dc = openshift.selector("dc", [ name: "authproxy-${frontName}-${params.authproxyHash}" ]).related('pods')
+                                                  dc.untilEach(1) {
+                                                      return (it.object().status.phase == "Running")
+                                                  }
+                                              }
+                                          }
+                                      } catch(e) {
+                                          echo "in catch block while deploying, cleaning up authproxy-${frontName}-${params.authproxyHash} assets"
+                                          openshift.selector("all", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                          openshift.selector("secrets", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                          echo "Caught: ${e}"
+                                          currentBuild.result = 'FAILURE'
+                                          throw e
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  stage('check') {
+                      steps {
+                          script {
+                              openshift.withCluster() {
+                                  openshift.withProject() {
+                                      try {
+                                          timeout(5) {
+                                              echo "waiting an additional 2 minutes for applications to finish starting up"
+                                              sleep 120
+                                              retry(3) {
+                                                  def portal = httpRequest ignoreSslErrors: true, url: "https://auth.${params.authproxyHash}.${params.rootDomain}", timeout: 30, httpMode: 'GET'
+                                                  println("GET portal status: " + portal.status)
+                                                  def ap = httpRequest ignoreSslErrors: true, url: "https://dummy-proxy.${params.authproxyHash}.${params.rootDomain}", timeout: 30, httpMode: 'GET', validResponseCodes: '200:302,401'
+                                                  println("GET portal status: " + ap.status)
+                                                  println("GET portal content: " + ap.content)
+                                              }
+                                          }
+                                      } catch(e) {
+                                          echo "in catch block while checking AuthProxy, cleaning up authproxy-${frontName}-${params.authproxyHash} assets"
+                                          openshift.selector("all", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                          openshift.selector("secrets", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                          echo "Caught: ${e}"
+                                          currentBuild.result = 'FAILURE'
+                                          throw e
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  stage('tag') {
+                      steps {
+                          script {
+                              if ("${params.authproxyBranch}" == "${params.authproxyHash}") {
+                                  echo "skipping tag - source matches target"
+                              } else {
+                                  openshift.withCluster() {
+                                      openshift.withProject() {
+                                          try {
+                                              timeout(5) {
+                                                  def namespace  = "${openshift.project()}"
+                                                  retry(3) {
+                                                      sh """
+                                                      oc login https://kubernetes.default.svc.cluster.local --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt --token=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) > /dev/null 2>&1
+                                                      oc tag -n ${namespace} authproxy-wsweet:${params.authproxyHash} authproxy-wsweet:${params.authproxyBranch}
+                                                      """
+                                                  }
+                                              }
+                                          } catch(e) {
+                                              echo "in catch block while tagging AuthProxy image, cleaning up authproxy-${frontName}-${params.authproxyHash} assets"
+                                              openshift.selector("all", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                              openshift.selector("secrets", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                              echo "Caught: ${e}"
+                                              currentBuild.result = 'FAILURE'
+                                              throw e
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  stage('post-cleanup') {
+                      steps {
+                          script {
+                              openshift.withCluster() {
+                                  openshift.withProject() {
+                                      openshift.selector("all", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                      openshift.selector("secrets", [ "${templateSel}": "${templateMark}-${params.authproxyHash}" ]).delete()
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+      type: JenkinsPipeline
+parameters:
+- name: GIT_SOURCE_HOST
+  description: Git FQDN we would build images from
+  displayName: Git
+  value: github.com
+- name: OPENSHIFT_ROUTED_DOMAIN
+  description: OpenShift Routers-served Root Domain
+  displayName: CI Router Domain
+  value: ci.dev.wopla.io
