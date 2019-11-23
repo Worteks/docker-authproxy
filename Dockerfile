@@ -20,12 +20,14 @@ RUN if test "$DO_UPGRADE"; then \
 	&& apt-get -y dist-upgrade \
 	&& apt-get clean; \
     fi \
-    && a2enmod proxy proxy_http proxy_wstunnel proxy_balancer \
+    && a2enmod proxy proxy_http proxy_wstunnel proxy_balancer ldap authnz_ldap \
     && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man \
-    && for dir in /etc/lemonldap-ng; \
+	/etc/ldap/ldap.conf \
+    && for dir in /etc/lemonldap-ng /etc/ldap; \
 	do \
-	    mkdir -p $dir 2>/dev/null; \
-	    chmod a+rwx -R $dir; \
+	    mkdir -p $dir 2>/dev/null \
+	    && chown -R 1001:root $dir \
+	    && chmod -R g=u $dir; \
 	done \
     && unset HTTP_PROXY HTTPS_PROXY NO_PROXY DO_UPGRADE http_proxy https_proxy
 
