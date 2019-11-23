@@ -38,6 +38,7 @@ initialization by passing `-e VAR=VALUE` to the Docker `run` command.
 | :------------------------- | ------------------------- | ----------------------------------------------------------- | -------------- |
 |  `APACHE_IGNORE_OPENLDAP`  | Ignore LemonLDAP autoconf | undef                                                       | wsweet/apache  |
 |  `AUTH_METHOD`             | Apache Auth Method        | `lemon`, could be `ldap` or `none`                          |                |
+|  `DEVOPS_HANDLER`          | LemonLDAP-NG rules.json   | undef                                                       |                |
 |  `OPENLDAP_BASE`           | OpenLDAP Base             | seds `OPENLDAP_DOMAIN`, default produces `dc=demo,dc=local` | wsweet/apache  |
 |  `OPENLDAP_BIND_DN_RREFIX` | OpenLDAP Bind DN Prefix   | `cn=whitepages,ou=services`                                 | wsweet/apache  |
 |  `OPENLDAP_BIND_PW`        | OpenLDAP Bind Password    | `secret`                                                    | wsweet/apache  |

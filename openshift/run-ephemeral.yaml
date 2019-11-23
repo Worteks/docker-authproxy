@@ -503,7 +503,7 @@ parameters:
   description: The ImageStreamTag we should pull images from
   displayName: Tag
   required: true
-  value: master
+  value: llng2
 - name: AUTHPROXY_MEMORY_LIMIT
   description: Maximum amount of memory a AuthProxy container can use
   displayName: AuthProxy Memory Limit
@@ -523,7 +523,7 @@ parameters:
   description: The ImageStreamTag we should pull images from
   displayName: Tag
   required: true
-  value: lemon-wsweet:master
+  value: lemon-wsweet:llng2
 - name: LEMON_MEMORY_LIMIT
   description: Maximum amount of memory a Lemon container can use
   displayName: Lemon Memory Limit
@@ -543,7 +543,7 @@ parameters:
   description: OpenLDAP Image Tag
   displayName: OpenLDAP ImageStream Tag
   required: true
-  value: openldap-wsweet:master
+  value: openldap-wsweet:llng2
 - name: OPENLDAP_MEMORY_LIMIT
   description: Maximum amount of memory an OpenLDAP container can use
   displayName: OpenLDAP Memory Limit

@@ -47,6 +47,8 @@ fi
 
 (
     cat <<EOF
+PerlOptions +GlobalRequest
+PerlModule Lemonldap::NG::Handler::ApacheMP2
 <VirtualHost *:$PROXY_HTTP_PORT>
     ServerName $PROXY_SERVER_NAME
     CustomLog /dev/stdout modremoteip
@@ -55,7 +57,7 @@ fi
 EOF
     if test "$AUTH_METHOD" = lemon; then
 	cat <<EOF
-    PerlHeaderParserHandler Lemonldap::NG::Handler
+    PerlHeaderParserHandler Lemonldap::NG::Handler::ApacheMP2
 EOF
     fi
     if test "$DIRECTORY_INDEX"; then
@@ -78,6 +80,15 @@ EOF
 	cat <<EOF
     SetEnvIfNoCase X-Forwarded-User "(.*)" REMOTE_USER=\$1
 EOF
+	if test "$DEVOPS_HANDLER"; then
+	    cat <<EOF
+    <Location "/rules.json">
+	SetHandler None
+	Require all granted
+    </Location>
+    Alias /rules.json /var/www/rules.json
+EOF
+	fi
     fi
     cat <<EOF
     ProxyPass / $PROXY_BACKEND_PROTO://$PROXY_BACKEND_HOST:$PROXY_BACKEND_PORT$PROXY_BACKEND_BASE
@@ -118,6 +129,24 @@ URI		$OPENLDAP_PROTO://$OPENLDAP_HOST:$OPENLDAP_PORT
 TLS_REQCERT	demand
 EOF
     fi >/etc/ldap/ldap.conf
+elif test "$AUTH_METHOD" = lemon; then
+    if test "$DEVOPS_HANDLER"; then
+	if test -s /lemon-rules.json; then
+	    ln -sf /lemon-rules.json /var/www/rules.json
+	elif ! test -s /var/www/rules.json; then
+	    cat <<EOF >/var/www/rules.json
+{
+    "rules": {
+	    "^/admin": "\$uid eq 'admin'",
+	    "default": "accept'
+	},
+    "headers": {
+	    "Auth-User": "\$uid"
+	}
+    }
+EOF
+	fi
+    fi
 fi
 
 unset PROXY_HTTP_PORT PROXY_PROTO PROXY_SERVER_NAME PROXY_BACKEND_PROTO \
